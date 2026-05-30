@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+extern struct inode* namei_base(char*, struct inode*);
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -304,7 +305,7 @@ create(char *path, short type, short major, short minor)
 uint64
 sys_open(void)
 {
-  char path[MAXPATH];
+  char path[MAXPATH], name[DIRSIZ];
   int fd, omode;
   struct file *f;
   struct inode *ip;
@@ -338,10 +339,14 @@ sys_open(void)
     uint seen[100];
     int nseen = 0;
     char target[MAXPATH];
+    struct inode *base = nameiparent(path, name);
     while(ip->type == T_SYMLINK && !(omode & O_NOFOLLOW)){
       for(int i = 0; i < nseen; i++){
         if(seen[i] == ip->inum){
           iunlockput(ip);
+          if(base){
+            iput(base);
+          }
           end_op();
           return -1;
         }
@@ -349,6 +354,9 @@ sys_open(void)
 
       if(nseen >= 100){
         iunlockput(ip);
+        if(base){
+          iput(base);
+        }
         end_op();
         return -1;
       }
@@ -357,15 +365,29 @@ sys_open(void)
 
       if(readi(ip, 0, (uint64)target, 0, MAXPATH) <= 0){
         iunlockput(ip);
+        if(base){
+          iput(base);
+        }
         end_op();
         return -1;
       }
       iunlockput(ip);
-      if((ip = namei(target)) == 0){
+      if(target[0] == '/'){
+        ip = namei(target);
+      }else{
+        ip = namei_base(target, base);
+      }
+      if(ip == 0){
+        if(base){
+          iput(base);
+        }
         end_op();
         return -1;
       }
       ilock(ip);
+    }
+    if(base){
+      iput(base);
     }
   }
 
@@ -443,7 +465,7 @@ sys_mknod(void)
 uint64
 sys_chdir(void)
 {
-  char path[MAXPATH];
+  char path[MAXPATH], name[DIRSIZ];
   struct inode *ip;
   struct proc *p = myproc();
 
@@ -458,10 +480,14 @@ sys_chdir(void)
   uint seen[100];
   int nseen = 0;
   char target[MAXPATH];
+  struct inode *base = nameiparent(path, name);
   while(ip->type == T_SYMLINK){
     for(int i = 0; i < nseen; i++){
       if(seen[i] == ip->inum){
         iunlockput(ip);
+        if(base){
+          iput(base);
+        }
         end_op();
         return -1;
       }
@@ -469,6 +495,9 @@ sys_chdir(void)
 
     if(nseen >= 100){
       iunlockput(ip);
+      if(base){
+        iput(base);
+      }
       end_op();
       return -1;
     }
@@ -477,15 +506,29 @@ sys_chdir(void)
 
     if(readi(ip, 0, (uint64)target, 0, MAXPATH) <= 0){
       iunlockput(ip);
+      if(base){
+        iput(base);
+      }
       end_op();
       return -1;
     }
     iunlockput(ip);
-    if((ip = namei(target)) == 0){
+    if(target[0] == '/'){
+      ip = namei(target);
+    }else{
+      ip = namei_base(target, base);
+    }
+    if(ip == 0){
+      if(base){
+        iput(base);
+      }
       end_op();
       return -1;
     }
     ilock(ip);
+  }
+  if(base){
+    iput(base);
   }
 
   if(ip->type != T_DIR){

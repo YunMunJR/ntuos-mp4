@@ -740,12 +740,14 @@ skipelem(char *path, char *name)
 // path element into name, which must have room for DIRSIZ bytes.
 // Must be called inside a transaction since it calls iput().
 static struct inode*
-namex(char *path, int nameiparent, char *name)
+namexbase(char *path, int nameiparent, char *name, struct inode *base)
 {
   struct inode *ip, *next;
 
   if(*path == '/')
     ip = iget(ROOTDEV, ROOTINO);
+  else if(base)
+    ip = idup(base);
   else
     ip = idup(myproc()->cwd);
 
@@ -764,6 +766,7 @@ namex(char *path, int nameiparent, char *name)
       iunlockput(ip);
       return 0;
     }
+    struct inode *linkbase = idup(ip);
     iunlockput(ip);
     ip = next;
 
@@ -777,12 +780,14 @@ namex(char *path, int nameiparent, char *name)
         for(int i = 0; i < nseen; i++){
           if(seen[i] == ip->inum){
             iunlockput(ip);
+            iput(linkbase);
             return 0;
           }
         }
 
         if(nseen >= 100){
           iunlockput(ip);
+          iput(linkbase);
           return 0;
         }
 
@@ -790,16 +795,25 @@ namex(char *path, int nameiparent, char *name)
 
         if(readi(ip, 0, (uint64)target, 0, MAXPATH) <= 0){
           iunlockput(ip);
+          iput(linkbase);
           return 0;
         }
         iunlockput(ip);
-        if((ip = namei(target)) == 0)
-          return 0;
+        if(target[0] == '/'){
+          ip = namexbase(target, 0, name, 0);
+        }else{
+          ip = namexbase(target, 0, name, linkbase);
+        }
 
+        if(ip == 0){
+          iput(linkbase);
+          return 0;
+        }
         ilock(ip);
       }
       iunlock(ip);
     }
+    iput(linkbase);
   }
   if(nameiparent){
     iput(ip);
@@ -808,11 +822,24 @@ namex(char *path, int nameiparent, char *name)
   return ip;
 }
 
+static struct inode*
+namex(char *path, int nameiparent, char *name)
+{
+  return namexbase(path, nameiparent, name, 0);
+}
+
 struct inode*
 namei(char *path)
 {
   char name[DIRSIZ];
   return namex(path, 0, name);
+}
+
+struct inode*
+namei_base(char *path, struct inode *base)
+{
+  char name[DIRSIZ];
+  return namexbase(path, 0, name, base);
 }
 
 struct inode*
