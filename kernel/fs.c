@@ -800,9 +800,9 @@ namexbase(char *path, int nameiparent, char *name, struct inode *base)
         }
         iunlockput(ip);
         if(target[0] == '/'){
-          ip = namei(target);
+          ip = namexbase(target, 0, name, 0);
         }else{
-          ip = namei_base(target, linkbase);
+          ip = namexbase(target, 0, name, linkbase);
         }
 
         if(ip == 0){
