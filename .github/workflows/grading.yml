@@ -14,7 +14,7 @@ on:
 jobs:
   grade:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v6
@@ -24,16 +24,12 @@ jobs:
       - name: Trust Git Directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-
-
       - name: Verify Student Identity
         id: verify
         run: |
           # Use the sanitized grade runner to verify identity
           python3 grade/verify_committer.py
         env:
-          # Pass TA Emails via Env (or read from mp.conf inside script)
-          # The script will read mp.conf directly.
           PYTHONUNBUFFERED: "1"
 
       - name: Execute Tests (Grading)
@@ -42,6 +38,9 @@ jobs:
           ./mp.sh grade --json report.json --markdown grade-report.md
         env:
           REPO_IS_PRIVATE: ${{ github.event.repository.private }}
+          # OFFICIAL GRADING: bypass the "skip on TA commit" guard so the
+          # TA-pushed grading commit actually runs the tests.
+          OFFICIAL_GRADING: "1"
 
       - name: Add Visual Summary
         if: always()
